@@ -1,4 +1,4 @@
-const CACHE_NAME = 'xprime-training-v1';
+const CACHE_NAME = 'xprime-training-v2';
 const ASSETS = [
   './',
   './index.html',

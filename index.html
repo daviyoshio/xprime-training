@@ -70,9 +70,15 @@
   .card-check input:checked ~ .check-mark::after{transform:rotate(45deg) scale(1);}
   .card-check input:focus-visible ~ .check-mark{outline:2px solid var(--yellow);outline-offset:2px;}
   .card-body{flex:1;min-width:0;}
-  .card-name{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+  .card-name{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
   .card.done .card-name{color:var(--text-secondary);text-decoration:line-through;text-decoration-color:var(--good);}
   .card-icon{font-size:13px;opacity:.8;}
+  .rx-badge{background:var(--yellow);color:#0d0d0d;border:0;border-radius:8px;padding:3px 9px;font-size:12px;font-weight:800;cursor:pointer;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .card.done .rx-badge{opacity:.6;}
+  .rx-edit{display:none;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;}
+  .rx-edit.open{display:flex;}
+  .rx-edit .field input{width:36px;}
+  .rx-x{color:var(--text-muted);font-size:13px;font-weight:700;}
   .card-fields{display:flex;gap:8px;flex-wrap:wrap;}
   .field{display:flex;align-items:center;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:4px 10px 4px 12px;gap:6px;}
   .field input{width:44px;background:transparent;border:0;color:var(--text);font-size:14px;padding:4px 0;text-align:right;font-variant-numeric:tabular-nums;}
@@ -222,10 +228,10 @@
   function loadData(){
     try{
       var raw = localStorage.getItem(STORAGE_KEY);
-      if(!raw) return {logs:{}, checks:{}, sessions:[]};
+      if(!raw) return {logs:{}, checks:{}, sessions:[], plan:{}};
       var parsed = JSON.parse(raw);
-      return {logs:parsed.logs||{}, checks:parsed.checks||{}, sessions:parsed.sessions||[]};
-    }catch(e){ return {logs:{}, checks:{}, sessions:[]}; }
+      return {logs:parsed.logs||{}, checks:parsed.checks||{}, sessions:parsed.sessions||[], plan:parsed.plan||{}};
+    }catch(e){ return {logs:{}, checks:{}, sessions:[], plan:{}}; }
   }
   function saveData(){
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }catch(e){}
@@ -236,6 +242,41 @@
     var off = d.getTimezoneOffset();
     var local = new Date(d.getTime() - off*60000);
     return local.toISOString().slice(0,10);
+  }
+
+  function defaultPlan(ex){
+    if(ex.type === 'weight') return {sets:3, reps:12};
+    if(ex.type === 'reps') return {sets:3, reps:15};
+    return {min:10};
+  }
+  function planFor(id, ex){
+    var saved = data.plan[id];
+    var def = defaultPlan(ex);
+    if(!saved) return def;
+    var merged = {};
+    Object.keys(def).forEach(function(k){
+      var v = Number(saved[k]);
+      merged[k] = (v > 0) ? v : def[k];
+    });
+    return merged;
+  }
+  function planLabel(id, ex){
+    var p = planFor(id, ex);
+    if(ex.type === 'time') return p.min+' min';
+    return p.sets+' × '+p.reps;
+  }
+  function rxEditFor(id, ex){
+    var p = planFor(id, ex);
+    if(ex.type === 'time'){
+      return '<div class="rx-edit" id="rx-edit-'+id+'">'+
+        '<div class="field"><input type="number" inputmode="numeric" min="1" step="1" value="'+p.min+'" data-rx-field="min" data-id="'+id+'" aria-label="Meta de minutos - '+ex.name+'"><span>min</span></div>'+
+      '</div>';
+    }
+    return '<div class="rx-edit" id="rx-edit-'+id+'">'+
+      '<div class="field"><input type="number" inputmode="numeric" min="1" step="1" value="'+p.sets+'" data-rx-field="sets" data-id="'+id+'" aria-label="Número de séries - '+ex.name+'"><span>séries</span></div>'+
+      '<span class="rx-x">×</span>'+
+      '<div class="field"><input type="number" inputmode="numeric" min="1" step="1" value="'+p.reps+'" data-rx-field="reps" data-id="'+id+'" aria-label="Repetições por série - '+ex.name+'"><span>reps</span></div>'+
+    '</div>';
   }
 
   function fieldsFor(id, ex){
@@ -266,7 +307,10 @@
         '<span class="check-mark" aria-hidden="true"></span>'+
       '</label>'+
       '<div class="card-body">'+
-        '<div class="card-name"><span class="card-icon">'+iconFor(ex.type)+'</span>'+ex.name+'</div>'+
+        '<div class="card-name"><span class="card-icon">'+iconFor(ex.type)+'</span>'+ex.name+
+          '<button class="rx-badge" data-rx="'+id+'" id="rx-badge-'+id+'" title="Toque para editar séries e repetições" aria-label="Séries e repetições de '+ex.name+': '+planLabel(id, ex)+'. Toque para editar.">'+planLabel(id, ex)+'</button>'+
+        '</div>'+
+        rxEditFor(id, ex)+
         '<div class="card-fields">'+fieldsFor(id, ex)+'</div>'+
       '</div>';
     return card;
@@ -365,6 +409,24 @@
     data.logs[id] = data.logs[id] || {};
     data.logs[id][field] = input.value;
     saveData();
+  }
+
+  function exerciseById(id){
+    var parts = id.split('-');
+    return WORKOUTS[parts[0]].exercises[Number(parts[1])];
+  }
+
+  function onRxChange(input){
+    var id = input.dataset.id;
+    var ex = exerciseById(id);
+    data.plan[id] = data.plan[id] || {};
+    data.plan[id][input.dataset.rxField] = input.value;
+    saveData();
+    var badge = document.getElementById('rx-badge-'+id);
+    if(badge){
+      badge.textContent = planLabel(id, ex);
+      badge.setAttribute('aria-label', 'Séries e repetições de '+ex.name+': '+planLabel(id, ex)+'. Toque para editar.');
+    }
   }
 
   function calcStreak(){
@@ -536,9 +598,17 @@
       var t = e.target;
       if(t.matches && t.matches('input[data-check]')) onCheck(t);
       else if(t.matches && t.matches('input[data-field]')) onFieldChange(t);
+      else if(t.matches && t.matches('input[data-rx-field]')) onRxChange(t);
     });
 
     document.addEventListener('click', function(e){
+      var rxBtn = e.target.closest('[data-rx]');
+      if(rxBtn){
+        var rxEdit = document.getElementById('rx-edit-'+rxBtn.dataset.rx);
+        if(rxEdit) rxEdit.classList.toggle('open');
+        return;
+      }
+
       var resetBtn = e.target.closest('[data-reset]');
       if(resetBtn){
         var workoutId = resetBtn.dataset.reset;
